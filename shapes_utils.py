@@ -10,11 +10,11 @@ import matplotlib.pyplot as plt
 
 # Imports with probable installation required
 try:
-    import pygmsh, meshio
+    import pygmsh, meshio, gmsh
 except ImportError:
     print('*** Missing required packages, I will install them for you ***')
     os.system('pip3 install pygmsh meshio')
-    import pygmsh, meshio
+    import pygmsh, meshio, gmsh
 
 # Custom imports
 from meshes_utils import *
@@ -47,6 +47,13 @@ class Shape:
         self.size_x         = 0.0
         self.size_y         = 0.0
         self.index          = 0
+
+        self.Ny_outer       = 91
+        self.Ny_inner       = 30
+        self.Nx_outer_right = 256
+        self.Nx_outer_left  = 91
+        self.Nx_inner       = 30
+        self.circle_rad     = 1.5
 
         if (len(radius) == n_control_pts): self.radius = radius
         if (len(radius) == 1):             self.radius = radius*np.ones([n_control_pts])
@@ -319,44 +326,287 @@ class Shape:
         ymin        = kwargs.get('ymin',       -1.0)
         ymax        = kwargs.get('ymax',        1.0)
         domain_h    = kwargs.get('domain_h',    1.0)
-        mesh_format = kwargs.get('mesh_format', 'mesh')
+        mesh_format = kwargs.get('mesh_format', 'msh')
 
         # Convert curve to polygon
         with pygmsh.geo.Geometry() as geom:
-            poly      = geom.add_polygon(self.curve_pts,
-                                         make_surface=not mesh_domain)
+            poly = geom.add_polygon(self.curve_pts,
+                                    mesh_size=0.006233,
+                                    make_surface=not mesh_domain,)
 
             # Mesh domain if necessary
             if (mesh_domain):
-                # Compute an intermediate mesh size
-                border = geom.add_rectangle(xmin, xmax,
-                                            ymin, ymax,
-                                            0.0,
-                                            domain_h,
-                                            holes=[poly.curve_loop])
+                # ********************  Adding geometry points  ********************
+                # bounding box
+                p1 = geom.add_point((xmin, ymax, 0))
+                p2 = geom.add_point((xmax, ymax, 0))
+                p3 = geom.add_point((xmax, ymin, 0))
+                p4 = geom.add_point((xmin, ymin, 0))
+
+                # outer circular points
+                p5 = geom.add_point((self.circle_rad, self.circle_rad, 0))
+                p6 = geom.add_point((-self.circle_rad, self.circle_rad, 0))
+                p7 = geom.add_point((self.circle_rad, -self.circle_rad, 0))
+                p8 = geom.add_point((-self.circle_rad, -self.circle_rad, 0))
+
+                # intermediate outer bounds
+                p9= geom.add_point((xmin, self.circle_rad, 0))
+                p10 = geom.add_point((xmin, -self.circle_rad, 0))
+                p11 = geom.add_point((-self.circle_rad, ymin, 0))
+                p12 = geom.add_point((-self.circle_rad, ymax, 0))
+                p13 = geom.add_point((self.circle_rad, ymax, 0))
+                p14 = geom.add_point((self.circle_rad, ymin, 0))
+                p15 = geom.add_point((xmax, self.circle_rad, 0))
+                p16 = geom.add_point((xmax, -self.circle_rad, 0))
+
+                # ********************  Adding geometry lines  ********************
+                # inside circle point
+                p17 = geom.add_point((0, 0, 0))
+
+                # Bounding box
+                l1 = geom.add_line(p1, p9)
+                l2 = geom.add_line(p9, p10)
+                l3 = geom.add_line(p10,p4)
+                l4 = geom.add_line(p4, p11)
+                l5 = geom.add_line(p11,p14)
+                l6 = geom.add_line(p14,p3)
+                l7 = geom.add_line(p3, p16)
+                l8 = geom.add_line(p16,p15)
+                l9 = geom.add_line(p15,p2)
+                l10 = geom.add_line(p2, p13)
+                l11 = geom.add_line(p13, p12)
+                l12 = geom.add_line(p12, p1)
+
+                # Cross lines
+                l13 = geom.add_line(p9, p6)
+                l14 = geom.add_line(p10, p8)
+                l15 = geom.add_line(p11, p8)
+                l16 = geom.add_line(p14, p7)
+                l17 = geom.add_line(p16, p7)
+                l18 = geom.add_line(p15, p5)
+                l19 = geom.add_line(p13, p5)
+                l20 = geom.add_line(p12, p6)
+
+                # Outer circle
+                l21 = geom.add_circle_arc(p6, p17, p8)
+                l22 = geom.add_circle_arc(p8, p17, p7)
+                l23 = geom.add_circle_arc(p7, p17, p5)
+                l24 = geom.add_circle_arc(p5, p17, p6)
+
+                # Outer domain
+                curve_loop_1 = geom.add_curve_loop([l1, l13, -l20, l12])
+                
+                curve_loop_2 = geom.add_curve_loop([l11, l20, -l24, -l19])
+                curve_loop_3 = geom.add_curve_loop([l10, l19, -l18, l9])
+                curve_loop_4 = geom.add_curve_loop([l8, l18, -l23, -l17])
+                curve_loop_5 = geom.add_curve_loop([l7, l17, -l16, l6])
+                curve_loop_6 = geom.add_curve_loop([l5, l16, -l22, -l15])
+                curve_loop_7 = geom.add_curve_loop([l4, l15, -l14, l3])
+                curve_loop_8 = geom.add_curve_loop([l2, l14, -l21, -l13])
+
+                curve_loop_9 = geom.add_curve_loop([l24, l21, l22, l23])
+
+                # ********************  Setting mesh points  ********************
+                # Outer domain
+                # x-direction 
+                geom.set_transfinite_curve(l1, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l20, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l19, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l9, self.Ny_outer, 'Progression', 1.0)
+
+                geom.set_transfinite_curve(l3, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l15, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l16, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l7, self.Ny_outer, 'Progression', 1.0)
+                
+                # y-direction
+                geom.set_transfinite_curve(l12, self.Nx_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l13, self.Nx_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l14, self.Nx_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l4, self.Nx_outer_left, 'Progression', 1.0)
+
+                geom.set_transfinite_curve(l10, self.Nx_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l18, self.Nx_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l17, self.Nx_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l6, self.Nx_outer_right, 'Progression', 1.0)
+
+                # Cross domain
+                # horizontal
+                geom.set_transfinite_curve(l2, self.Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l21, self.Ny_inner, 'Progression', 1.0)
+
+                geom.set_transfinite_curve(l8, self.Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l23, self.Ny_inner, 'Progression', 1.0)
+                
+                # vertical
+                geom.set_transfinite_curve(l11, self.Nx_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l24, self.Nx_inner, 'Progression', 1.0)
+
+                geom.set_transfinite_curve(l5, self.Nx_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l22, self.Nx_inner, 'Progression', 1.0)
+
+                # 
+                plane_surface_1 = geom.add_plane_surface(curve_loop_1)
+                plane_surface_2 = geom.add_plane_surface(curve_loop_2)
+                plane_surface_3 = geom.add_plane_surface(curve_loop_3)
+                plane_surface_4 = geom.add_plane_surface(curve_loop_4)
+                plane_surface_5 = geom.add_plane_surface(curve_loop_5)
+                plane_surface_6 = geom.add_plane_surface(curve_loop_6)
+                plane_surface_7 = geom.add_plane_surface(curve_loop_7)
+                plane_surface_8 = geom.add_plane_surface(curve_loop_8)
+
+                plane_surface_9 = geom.add_plane_surface(curve_loop_9, holes=[poly.curve_loop])
+
+                geom.set_transfinite_surface(plane_surface_1, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_2, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_3, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_4, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_5, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_6, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_7, 'Left', [])
+                geom.set_transfinite_surface(plane_surface_8, 'Left', [])
+
+                # ********************  Quad mesh surface ********************
+                geom.set_recombined_surfaces([
+                    plane_surface_1, plane_surface_2, plane_surface_3,
+                    plane_surface_4, plane_surface_5, plane_surface_6,
+                    plane_surface_7, plane_surface_8, 
+                ])
+                
+                # ********************  Extruding ********************
+                # Outer domain
+                extruded_1 = geom.extrude(
+                    plane_surface_1,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_2 = geom.extrude(
+                    plane_surface_2,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_3 = geom.extrude(
+                    plane_surface_3,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_4 = geom.extrude(
+                    plane_surface_4,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_5 = geom.extrude(
+                    plane_surface_5,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_6 = geom.extrude(
+                    plane_surface_6,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_7 = geom.extrude(
+                    plane_surface_7,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                extruded_8 = geom.extrude(
+                    plane_surface_8,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                # Inner domain
+                extruded_9 = geom.extrude(
+                    plane_surface_9,
+                    (0,0,1),
+                    num_layers=1,
+                    heights=[1],
+                    recombine=True,
+                )
+
+                # ******************** Setting physical groups ********************
+                # surfaces
+                geom.add_physical([
+                    plane_surface_1, plane_surface_2, plane_surface_3,
+                    plane_surface_4, plane_surface_5, plane_surface_6,
+                    plane_surface_7, plane_surface_8, plane_surface_9
+                ], label='back')
+
+                geom.add_physical([
+                    extruded_1[0], extruded_2[0], extruded_3[0],
+                    extruded_4[0], extruded_5[0], extruded_6[0],
+                    extruded_7[0], extruded_8[0], extruded_9[0],
+                ], label='front')
+
+                geom.add_physical([
+                    extruded_1[2][0], extruded_7[2][3], extruded_8[2][0], 
+                ], label='in')
+
+                geom.add_physical([
+                    extruded_3[2][3], extruded_4[2][0], extruded_5[2][0],
+                ], label='out')
+
+                geom.add_physical([
+                    extruded_1[2][3], extruded_2[2][0], extruded_3[2][0],
+                ], label='sym1')
+
+                geom.add_physical([
+                    extruded_5[2][3], extruded_6[2][0], extruded_7[2][0],
+                ], label='sym2')
+
+                geom.add_physical(extruded_9[2][4:], label='obstacle')
+
+                # volume
+                geom.add_physical([
+                    extruded_1[1], extruded_2[1], extruded_3[1], 
+                    extruded_4[1], extruded_5[1], extruded_6[1], 
+                    extruded_7[1], extruded_8[1], extruded_9[1], 
+                ], label='internal')
+                
+                geom.synchronize()
+                
+                # geom.save_geometry('test.geo_unrolled')
 
             # Generate mesh and write in medit format
             try:
-                mesh = geom.generate_mesh(dim=2)
+                mesh = geom.generate_mesh()
+
+                filename = self.name+'_'+str(self.index)+'.'+mesh_format
+                pygmsh.write(filename)
             except AssertionError:
                 print('\n'+'!!!!! Meshing failed !!!!!')
                 return False, 0
 
         # Compute data from mesh
         n_tri = len(mesh.cells_dict['triangle'])
+        n_quad = len(mesh.cells_dict['quad'])
+        n_cells = n_tri + n_quad
 
-        # Remove vertex keywork from cells dictionnary
-        # to avoid warning message from meshio
-        del mesh.cells_dict['vertex']
-
-        # Remove lines if output format is xml
-        if (mesh_format == 'xml'): del mesh.cells['line']
-
-        # Write mesh
-        filename = self.name+'_'+str(self.index)+'.'+mesh_format
-        meshio.write_points_cells(filename, mesh.points, mesh.cells)
-
-        return True, n_tri
+        return True, n_cells
 
     ### ************************************************
     ### Get shape bounding box

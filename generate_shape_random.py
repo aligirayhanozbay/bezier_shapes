@@ -5,15 +5,15 @@ from shapes_utils import *
 ### Generate a random shape from given inputs
 filename       = 'shape'
 n_pts          = 6
-n_sampling_pts = 50
+n_sampling_pts = 40
 plot_pts       = True
 mesh_domain    = True
 magnify        = 1.0
 domain_h       = 0.2
-xmin           =-1.0
-xmax           = 1.0
-ymin           =-1.0
-ymax           = 1.0
+xmin           =-10.0
+xmax           = 25.0
+ymin           =-10.0
+ymax           = 10.0
 
 # To generate shapes with homogeneous curvatures
 radius         = [0.5]
