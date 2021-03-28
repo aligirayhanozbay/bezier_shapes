@@ -1,5 +1,11 @@
 # bezier_shapes
 
+**NOTE: This is a modification of the original repository by [J. Viquerat](https://github.com/jviquerat/bezier_shapes). The modifications are:**
+
+- Increased domain to x: (-10, 25), y: (-10, 10)
+- Cross domain refinement
+- 3D mesh to be used in OpenFOAM
+
 This repository contains tools to generate random shapes using Bezier curves (images and meshes), controlling the number of points and the local curvature and sharpness. It is also possible to generate shapes by joining specified points using an in-house csv format, and to generate full sets of random shapes with variable parameters.
 
 <p align="center">
