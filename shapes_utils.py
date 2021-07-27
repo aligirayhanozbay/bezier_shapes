@@ -23,7 +23,9 @@ class Shape:
                  n_sampling_pts=None,
                  radius        =None,
                  edgy          =None,
-                 extruded      =False):
+                 extruded      =False,
+                 element_scaler=3,
+                 wake_refined  =True):
         if (name           is None): name           = 'shape'
         if (control_pts    is None): control_pts    = np.array([])
         if (n_control_pts  is None): n_control_pts  = 0
@@ -32,6 +34,8 @@ class Shape:
         if (edgy           is None): edgy           = np.array([])
         
         self.extruded       = extruded
+        self.element_scaler = element_scaler
+        self.wake_refined   = wake_refined
         self.name           = name
         self.control_pts    = control_pts
         self.n_control_pts  = n_control_pts
@@ -41,12 +45,12 @@ class Shape:
         self.size_x         = 0.0
         self.size_y         = 0.0
         self.index          = 0
-
-        self.Ny_outer       = 91
-        self.Ny_inner       = 30
-        self.Nx_outer_right = 256
-        self.Nx_outer_left  = 91
-        self.Nx_inner       = 30
+	
+        self.Ny_outer       = 8*self.element_scaler if self.wake_refined else (30*self.element_scaler)
+        self.Ny_inner       = 12*self.element_scaler if self.wake_refined else (10*self.element_scaler)
+        self.Nx_outer_right = 26*self.element_scaler if self.wake_refined else (86*self.element_scaler)
+        self.Nx_outer_left  = 3*self.element_scaler if self.wake_refined else (30*self.element_scaler)
+        self.Nx_inner       = 4*self.element_scaler if self.wake_refined else (10*self.element_scaler)
         self.circle_rad     = 1.5
 
         if (len(radius) == n_control_pts): self.radius = radius
@@ -326,7 +330,7 @@ class Shape:
         with pygmsh.geo.Geometry() as geom:
             poly = geom.add_polygon(self.curve_pts,
                                     mesh_size=0.006233,
-                                    make_surface=not mesh_domain,)
+                                    make_surface=not mesh_domain)
 
             # Mesh domain if necessary
             if (mesh_domain):
@@ -590,6 +594,8 @@ class Shape:
                     geom.add_physical([l1,l2,l3], label='in')
                     geom.add_physical([l9,l8,l7], label='out')
                     geom.add_physical([l4,l5,l6,l12,l11,l10], label='topbottom')
+                    #import pdb; pdb.set_trace()
+                    geom.add_physical(poly.curve_loop, label='obstacle')
                 geom.synchronize()
                 
                 # geom.save_geometry('test.geo_unrolled')
