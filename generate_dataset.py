@@ -2,17 +2,9 @@
 import os
 import random
 import shutil
-from   datetime import datetime
+import progress.bar
+from datetime import datetime
 
-# Imports with probable installation required
-try:
-    import progress.bar
-except ImportError:
-    print('*** Missing required packages, I will install them for you ***')
-    os.system('pip3 install progress')
-    import progress.bar
-
-# Custom imports
 from shapes_utils import *
 from meshes_utils import *
 
@@ -45,8 +37,8 @@ xmax           = 25.0
 ymin           =-10.0
 ymax           = 10.0
 domain_h       = 0.2
-n_cells_max    = 300000
-n_cells_min    = 150000
+n_cells_max    = 900000
+n_cells_min    = 5000
 
 # Create directories if necessary
 if not os.path.exists(mesh_dir):
@@ -76,6 +68,7 @@ for i in range(0,n_shapes):
                                      xmax=xmax,
                                      ymin=ymin,
                                      ymax=ymax)
+        #import pdb; pdb.set_trace()
         if (meshed and (n_cells < n_cells_max and n_cells > n_cells_min)):
             shape.generate_image(plot_pts=plot_pts,
                                  xmin=xmin,

@@ -7,16 +7,8 @@ import scipy.special
 import matplotlib
 import numpy             as np
 import matplotlib.pyplot as plt
+import pygmsh, meshio, gmsh
 
-# Imports with probable installation required
-try:
-    import pygmsh, meshio, gmsh
-except ImportError:
-    print('*** Missing required packages, I will install them for you ***')
-    os.system('pip3 install pygmsh meshio')
-    import pygmsh, meshio, gmsh
-
-# Custom imports
 from meshes_utils import *
 
 ### ************************************************
@@ -30,14 +22,16 @@ class Shape:
                  n_control_pts =None,
                  n_sampling_pts=None,
                  radius        =None,
-                 edgy          =None):
+                 edgy          =None,
+                 extruded      =False):
         if (name           is None): name           = 'shape'
         if (control_pts    is None): control_pts    = np.array([])
         if (n_control_pts  is None): n_control_pts  = 0
         if (n_sampling_pts is None): n_sampling_pts = 0
         if (radius         is None): radius         = np.array([])
         if (edgy           is None): edgy           = np.array([])
-
+        
+        self.extruded       = extruded
         self.name           = name
         self.control_pts    = control_pts
         self.n_control_pts  = n_control_pts
@@ -473,120 +467,129 @@ class Shape:
                     plane_surface_7, plane_surface_8, 
                 ])
                 
-                # ********************  Extruding ********************
-                # Outer domain
-                extruded_1 = geom.extrude(
-                    plane_surface_1,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                if self.extruded:
+                    # ********************  Extruding ********************
+                    # Outer domain
+                    extruded_1 = geom.extrude(
+                        plane_surface_1,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_2 = geom.extrude(
-                    plane_surface_2,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_2 = geom.extrude(
+                        plane_surface_2,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_3 = geom.extrude(
-                    plane_surface_3,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_3 = geom.extrude(
+                        plane_surface_3,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_4 = geom.extrude(
-                    plane_surface_4,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_4 = geom.extrude(
+                        plane_surface_4,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_5 = geom.extrude(
-                    plane_surface_5,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_5 = geom.extrude(
+                        plane_surface_5,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_6 = geom.extrude(
-                    plane_surface_6,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_6 = geom.extrude(
+                        plane_surface_6,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_7 = geom.extrude(
-                    plane_surface_7,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_7 = geom.extrude(
+                        plane_surface_7,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                extruded_8 = geom.extrude(
-                    plane_surface_8,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
+                    extruded_8 = geom.extrude(
+                        plane_surface_8,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
 
-                # Inner domain
-                extruded_9 = geom.extrude(
-                    plane_surface_9,
-                    (0,0,1),
-                    num_layers=1,
-                    heights=[1],
-                    recombine=True,
-                )
-
-                # ******************** Setting physical groups ********************
-                # surfaces
-                geom.add_physical([
-                    plane_surface_1, plane_surface_2, plane_surface_3,
-                    plane_surface_4, plane_surface_5, plane_surface_6,
-                    plane_surface_7, plane_surface_8, plane_surface_9
-                ], label='back')
-
-                geom.add_physical([
-                    extruded_1[0], extruded_2[0], extruded_3[0],
-                    extruded_4[0], extruded_5[0], extruded_6[0],
-                    extruded_7[0], extruded_8[0], extruded_9[0],
-                ], label='front')
-
-                geom.add_physical([
-                    extruded_1[2][0], extruded_7[2][3], extruded_8[2][0], 
-                ], label='in')
-
-                geom.add_physical([
-                    extruded_3[2][3], extruded_4[2][0], extruded_5[2][0],
-                ], label='out')
-
-                geom.add_physical([
-                    extruded_1[2][3], extruded_2[2][0], extruded_3[2][0],
-                ], label='sym1')
-
-                geom.add_physical([
-                    extruded_5[2][3], extruded_6[2][0], extruded_7[2][0],
-                ], label='sym2')
-
-                geom.add_physical(extruded_9[2][4:], label='obstacle')
-
-                # volume
-                geom.add_physical([
-                    extruded_1[1], extruded_2[1], extruded_3[1], 
-                    extruded_4[1], extruded_5[1], extruded_6[1], 
-                    extruded_7[1], extruded_8[1], extruded_9[1], 
-                ], label='internal')
+                    # Inner domain
+                    extruded_9 = geom.extrude(
+                        plane_surface_9,
+                        (0,0,1),
+                        num_layers=1,
+                        heights=[1],
+                        recombine=True,
+                    )
+		
+                    # ******************** Setting physical groups ********************
+                    # surfaces
+                    geom.add_physical([
+                        plane_surface_1, plane_surface_2, plane_surface_3,
+                        plane_surface_4, plane_surface_5, plane_surface_6,
+                        plane_surface_7, plane_surface_8, plane_surface_9
+                    ], label='back')
                 
+                    geom.add_physical([
+                        extruded_1[0], extruded_2[0], extruded_3[0],
+                        extruded_4[0], extruded_5[0], extruded_6[0],
+                        extruded_7[0], extruded_8[0], extruded_9[0],
+                    ], label='front')
+
+                    geom.add_physical([
+                        extruded_1[2][0], extruded_7[2][3], extruded_8[2][0], 
+                    ], label='in')
+
+                    geom.add_physical([
+                        extruded_3[2][3], extruded_4[2][0], extruded_5[2][0],
+                    ], label='out')
+
+                    geom.add_physical([
+                        extruded_1[2][3], extruded_2[2][0], extruded_3[2][0],
+                    ], label='sym1')
+
+                    geom.add_physical([
+                        extruded_5[2][3], extruded_6[2][0], extruded_7[2][0],
+                    ], label='sym2')
+
+                    geom.add_physical(extruded_9[2][4:], label='obstacle')
+
+                    # volume
+                    geom.add_physical([
+                        extruded_1[1], extruded_2[1], extruded_3[1], 
+                        extruded_4[1], extruded_5[1], extruded_6[1], 
+                        extruded_7[1], extruded_8[1], extruded_9[1], 
+                    ], label='fluid')
+                else:
+                    geom.add_physical([
+                        plane_surface_1, plane_surface_2, plane_surface_3,
+                        plane_surface_4, plane_surface_5, plane_surface_6,
+                        plane_surface_7, plane_surface_8, plane_surface_9
+                    ], label='fluid')
+                    geom.add_physical([l1,l2,l3], label='in')
+                    geom.add_physical([l9,l8,l7], label='out')
+                    geom.add_physical([l4,l5,l6,l12,l11,l10], label='topbottom')
                 geom.synchronize()
                 
                 # geom.save_geometry('test.geo_unrolled')
