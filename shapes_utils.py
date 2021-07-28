@@ -595,7 +595,7 @@ class Shape:
                     geom.add_physical([l9,l8,l7], label='out')
                     geom.add_physical([l4,l5,l6,l12,l11,l10], label='topbottom')
                     #import pdb; pdb.set_trace()
-                    geom.add_physical(poly.curve_loop, label='obstacle')
+                    geom.add_physical([*poly.curve_loop.curves], label='obstacle')
                 geom.synchronize()
                 
                 # geom.save_geometry('test.geo_unrolled')
