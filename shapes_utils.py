@@ -8,34 +8,30 @@ import matplotlib
 import numpy             as np
 import matplotlib.pyplot as plt
 import pygmsh, meshio, gmsh
+import itertools
 
-from meshes_utils import *
+from .meshes_utils import *
 
 ### ************************************************
 ### Class defining shape object
 class Shape:
     ### ************************************************
     ### Constructor
+    default_name_counter = itertools.count()
     def __init__(self,
-                 name          ='shape',
+                 name          =None,
                  control_pts   =None,
                  n_control_pts =None,
                  n_sampling_pts=None,
                  radius        =None,
-                 edgy          =None,
-                 extruded      =False,
-                 element_scaler=3,
-                 wake_refined  =True):
-        if (name           is None): name           = 'shape'
+                 edgy          =None):
+        if (name           is None): name           = '/tmp/shape_' + str(next(self.default_name_counter))
         if (control_pts    is None): control_pts    = np.array([])
         if (n_control_pts  is None): n_control_pts  = 0
         if (n_sampling_pts is None): n_sampling_pts = 0
         if (radius         is None): radius         = np.array([])
         if (edgy           is None): edgy           = np.array([])
         
-        self.extruded       = extruded
-        self.element_scaler = element_scaler
-        self.wake_refined   = wake_refined
         self.name           = name
         self.control_pts    = control_pts
         self.n_control_pts  = n_control_pts
@@ -46,19 +42,13 @@ class Shape:
         self.size_y         = 0.0
         self.index          = 0
 	
-        self.Ny_outer       = 8*self.element_scaler if self.wake_refined else (30*self.element_scaler)
-        self.Ny_inner       = 12*self.element_scaler if self.wake_refined else (10*self.element_scaler)
-        self.Nx_outer_right = 26*self.element_scaler if self.wake_refined else (86*self.element_scaler)
-        self.Nx_outer_left  = 3*self.element_scaler if self.wake_refined else (30*self.element_scaler)
-        self.Nx_inner       = 4*self.element_scaler if self.wake_refined else (10*self.element_scaler)
-        self.circle_rad     = 1.5
 
         if (len(radius) == n_control_pts): self.radius = radius
         if (len(radius) == 1):             self.radius = radius*np.ones([n_control_pts])
 
         if (len(edgy) == n_control_pts):   self.edgy = edgy
         if (len(edgy) == 1):               self.edgy = edgy*np.ones([n_control_pts])
-
+	
         subname             = name.split('_')
         if (len(subname) == 2): # name is of the form shape_?.xxx
             self.name       = subname[0]
@@ -316,16 +306,13 @@ class Shape:
 
     ### ************************************************
     ### Mesh shape
-    def mesh(self, *args, **kwargs):
-        # Handle optional argument
-        mesh_domain = kwargs.get('mesh_domain', False)
-        xmin        = kwargs.get('xmin',       -1.0)
-        xmax        = kwargs.get('xmax',        1.0)
-        ymin        = kwargs.get('ymin',       -1.0)
-        ymax        = kwargs.get('ymax',        1.0)
-        domain_h    = kwargs.get('domain_h',    1.0)
-        mesh_format = kwargs.get('mesh_format', 'msh')
-
+    def mesh(self, mesh_domain = False, xmin = -1.0, xmax = 1.0, ymin = -1.0, ymax = 1.0, mesh_format = 'msh', extruded = False, element_scaler = 3, wake_refined = True):
+        Ny_outer       = 8*element_scaler if wake_refined else (30*element_scaler)
+        Ny_inner       = 12*element_scaler if wake_refined else (10*element_scaler)
+        Ny_outer_right = 26*element_scaler if wake_refined else (86*element_scaler)
+        Ny_outer_left  = 3*element_scaler if wake_refined else (30*element_scaler)
+        Nx_inner       = 4*element_scaler if wake_refined else (10*element_scaler)
+        circle_rad     = 1.5
         # Convert curve to polygon
         with pygmsh.geo.Geometry() as geom:
             poly = geom.add_polygon(self.curve_pts,
@@ -342,20 +329,20 @@ class Shape:
                 p4 = geom.add_point((xmin, ymin, 0))
 
                 # outer circular points
-                p5 = geom.add_point((self.circle_rad, self.circle_rad, 0))
-                p6 = geom.add_point((-self.circle_rad, self.circle_rad, 0))
-                p7 = geom.add_point((self.circle_rad, -self.circle_rad, 0))
-                p8 = geom.add_point((-self.circle_rad, -self.circle_rad, 0))
+                p5 = geom.add_point((circle_rad, circle_rad, 0))
+                p6 = geom.add_point((-circle_rad, circle_rad, 0))
+                p7 = geom.add_point((circle_rad, -circle_rad, 0))
+                p8 = geom.add_point((-circle_rad, -circle_rad, 0))
 
                 # intermediate outer bounds
-                p9= geom.add_point((xmin, self.circle_rad, 0))
-                p10 = geom.add_point((xmin, -self.circle_rad, 0))
-                p11 = geom.add_point((-self.circle_rad, ymin, 0))
-                p12 = geom.add_point((-self.circle_rad, ymax, 0))
-                p13 = geom.add_point((self.circle_rad, ymax, 0))
-                p14 = geom.add_point((self.circle_rad, ymin, 0))
-                p15 = geom.add_point((xmax, self.circle_rad, 0))
-                p16 = geom.add_point((xmax, -self.circle_rad, 0))
+                p9= geom.add_point((xmin, circle_rad, 0))
+                p10 = geom.add_point((xmin, -circle_rad, 0))
+                p11 = geom.add_point((-circle_rad, ymin, 0))
+                p12 = geom.add_point((-circle_rad, ymax, 0))
+                p13 = geom.add_point((circle_rad, ymax, 0))
+                p14 = geom.add_point((circle_rad, ymin, 0))
+                p15 = geom.add_point((xmax, circle_rad, 0))
+                p16 = geom.add_point((xmax, -circle_rad, 0))
 
                 # ********************  Adding geometry lines  ********************
                 # inside circle point
@@ -407,41 +394,41 @@ class Shape:
                 # ********************  Setting mesh points  ********************
                 # Outer domain
                 # x-direction 
-                geom.set_transfinite_curve(l1, self.Ny_outer, 'Progression', 1.0)
-                geom.set_transfinite_curve(l20, self.Ny_outer, 'Progression', 1.0)
-                geom.set_transfinite_curve(l19, self.Ny_outer, 'Progression', 1.0)
-                geom.set_transfinite_curve(l9, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l1, Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l20, Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l19, Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l9, Ny_outer, 'Progression', 1.0)
 
-                geom.set_transfinite_curve(l3, self.Ny_outer, 'Progression', 1.0)
-                geom.set_transfinite_curve(l15, self.Ny_outer, 'Progression', 1.0)
-                geom.set_transfinite_curve(l16, self.Ny_outer, 'Progression', 1.0)
-                geom.set_transfinite_curve(l7, self.Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l3, Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l15, Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l16, Ny_outer, 'Progression', 1.0)
+                geom.set_transfinite_curve(l7, Ny_outer, 'Progression', 1.0)
                 
                 # y-direction
-                geom.set_transfinite_curve(l12, self.Nx_outer_left, 'Progression', 1.0)
-                geom.set_transfinite_curve(l13, self.Nx_outer_left, 'Progression', 1.0)
-                geom.set_transfinite_curve(l14, self.Nx_outer_left, 'Progression', 1.0)
-                geom.set_transfinite_curve(l4, self.Nx_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l12, Ny_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l13, Ny_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l14, Ny_outer_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l4, Ny_outer_left, 'Progression', 1.0)
 
-                geom.set_transfinite_curve(l10, self.Nx_outer_right, 'Progression', 1.0)
-                geom.set_transfinite_curve(l18, self.Nx_outer_right, 'Progression', 1.0)
-                geom.set_transfinite_curve(l17, self.Nx_outer_right, 'Progression', 1.0)
-                geom.set_transfinite_curve(l6, self.Nx_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l10, Ny_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l18, Ny_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l17, Ny_outer_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l6, Ny_outer_right, 'Progression', 1.0)
 
                 # Cross domain
                 # horizontal
-                geom.set_transfinite_curve(l2, self.Ny_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l21, self.Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l2, Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l21, Ny_inner, 'Progression', 1.0)
 
-                geom.set_transfinite_curve(l8, self.Ny_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l23, self.Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l8, Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l23, Ny_inner, 'Progression', 1.0)
                 
                 # vertical
-                geom.set_transfinite_curve(l11, self.Nx_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l24, self.Nx_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l11, Nx_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l24, Nx_inner, 'Progression', 1.0)
 
-                geom.set_transfinite_curve(l5, self.Nx_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l22, self.Nx_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l5, Nx_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l22, Nx_inner, 'Progression', 1.0)
 
                 # 
                 plane_surface_1 = geom.add_plane_surface(curve_loop_1)
@@ -471,7 +458,7 @@ class Shape:
                     plane_surface_7, plane_surface_8, 
                 ])
                 
-                if self.extruded:
+                if extruded:
                     # ********************  Extruding ********************
                     # Outer domain
                     extruded_1 = geom.extrude(
@@ -604,7 +591,7 @@ class Shape:
             try:
                 mesh = geom.generate_mesh()
 
-                filename = self.name+'_'+str(self.index)+'.'+mesh_format
+                filename = self.name+'.'+mesh_format
                 pygmsh.write(filename)
             except AssertionError:
                 print('\n'+'!!!!! Meshing failed !!!!!')
@@ -615,7 +602,7 @@ class Shape:
         n_quad = len(mesh.cells_dict['quad'])
         n_cells = n_tri + n_quad
 
-        return True, n_cells
+        return filename, n_cells
 
     ### ************************************************
     ### Get shape bounding box

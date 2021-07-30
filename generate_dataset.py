@@ -63,7 +63,6 @@ for i in range(0,n_shapes):
 
         shape.generate(magnify=magnify)
         meshed, n_cells = shape.mesh(mesh_domain=mesh_domain,
-                                     domain_h=domain_h,
                                      xmin=xmin,
                                      xmax=xmax,
                                      ymin=ymin,
