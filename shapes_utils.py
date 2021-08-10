@@ -55,8 +55,7 @@ class Shape:
             index           = subname[1].split('.')[0]
             self.index      = int(index)
         if (len(subname) >  2): # name contains several '_'
-            print('Please do not use several "_" char in shape name')
-            quit()
+            raise(ValueError('Please do not use several "_" char in shape name'))
 
         if (len(control_pts) > 0):
             self.control_pts   = control_pts
@@ -590,8 +589,7 @@ class Shape:
             # Generate mesh and write in medit format
             try:
                 mesh = geom.generate_mesh()
-
-                filename = self.name+'.'+mesh_format
+                filename = f'{self.name}_{self.index}.{mesh_format}'
                 pygmsh.write(filename)
             except AssertionError:
                 print('\n'+'!!!!! Meshing failed !!!!!')
