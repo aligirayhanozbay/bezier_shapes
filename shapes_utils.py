@@ -314,6 +314,11 @@ class Shape:
         circle_rad     = 1.5
         # Convert curve to polygon
         with pygmsh.geo.Geometry() as geom:
+            # bounding box
+            p1 = geom.add_point((xmin, ymax, 0))
+            p2 = geom.add_point((xmax, ymax, 0))
+            p3 = geom.add_point((xmax, ymin, 0))
+            p4 = geom.add_point((xmin, ymin, 0))
             poly = geom.add_polygon(self.curve_pts,
                                     mesh_size=0.006233,
                                     make_surface=not mesh_domain)
@@ -321,12 +326,6 @@ class Shape:
             # Mesh domain if necessary
             if (mesh_domain):
                 # ********************  Adding geometry points  ********************
-                # bounding box
-                p1 = geom.add_point((xmin, ymax, 0))
-                p2 = geom.add_point((xmax, ymax, 0))
-                p3 = geom.add_point((xmax, ymin, 0))
-                p4 = geom.add_point((xmin, ymin, 0))
-
                 # outer circular points
                 p5 = geom.add_point((circle_rad, circle_rad, 0))
                 p6 = geom.add_point((-circle_rad, circle_rad, 0))
