@@ -415,8 +415,8 @@ class Shape:
 
                 # Cross domain
                 # horizontal
-                geom.set_transfinite_curve(l2, Ny_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l21, Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l2, Ny_inner//2 if wake_refined else Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l21, Ny_inner//2 if wake_refined else Ny_inner, 'Progression', 1.0)
 
                 geom.set_transfinite_curve(l8, Ny_inner, 'Progression', 1.0)
                 geom.set_transfinite_curve(l23, Ny_inner, 'Progression', 1.0)
@@ -595,8 +595,8 @@ class Shape:
                 return False, 0
 
         # Compute data from mesh
-        n_tri = len(mesh.cells_dict['triangle'])
-        n_quad = len(mesh.cells_dict['quad'])
+        n_tri = len(mesh.cells_dict.get('triangle',[]))
+        n_quad = len(mesh.cells_dict.get('quad',[]))
         n_cells = n_tri + n_quad
 
         return filename, n_cells
