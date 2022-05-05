@@ -10,6 +10,12 @@ import matplotlib.pyplot as plt
 import pygmsh, meshio, gmsh
 import itertools
 
+try:
+    import pydscpack
+except:
+    import warnings
+    warnings.warn('Could not import pydscpack - mapping quality checking functionality will not work.')
+
 from .meshes_utils import *
 
 ### ************************************************
@@ -81,6 +87,7 @@ class Shape:
         cylinder  = kwargs.get('cylinder',  False)
         magnify   = kwargs.get('magnify',   1.0)
         ccws      = kwargs.get('ccws',      True)
+        check_mapping = kwargs.get('check_mapping', False)
 
         # Generate random control points if empty
         if (len(self.control_pts) == 0):
@@ -170,6 +177,25 @@ class Shape:
 
         # Compute dimensions
         self.compute_dimensions()
+
+        if check_mapping:
+            inner_polygon = self.curve_pts[:,0] + 1j * self.curve_pts[:,1]
+            try:
+                xmin, xmax, ymin, ymax = check_mapping
+            except:
+                center = np.mean(self.curve_pts, axis=0)
+                maxcoords = np.max(self.curve_pts, axis=0)
+                maxcoords = (maxcoords - center)*2.0 + center
+                mincoords = np.min(self.curve_pts, axis=0)
+                mincoords = (mincoords - center)*2.0 + center
+                xmin, xmax, ymin, ymax = [maxcoords[0], mincoords[0], maxcoords[1], mincoords[1]]
+            outer_polygon = np.array([xmin + 1j*ymax, xmin + 1j*ymin, xmax + 1j*ymin, xmax + 1j*ymax])
+            amap = pydscpack.AnnulusMap(outer_polygon, inner_polygon)
+            test_result = amap.test_map()
+            return test_result
+        else:
+            return
+            
 
     ### ************************************************
     ### Write image
@@ -305,13 +331,49 @@ class Shape:
 
     ### ************************************************
     ### Mesh shape
-    def mesh(self, mesh_domain = False, xmin = -1.0, xmax = 1.0, ymin = -1.0, ymax = 1.0, mesh_format = 'msh', extruded = False, element_scaler = 3, wake_refined = True):
-        Ny_outer       = 8*element_scaler if wake_refined else (30*element_scaler)
-        Ny_inner       = 12*element_scaler if wake_refined else (10*element_scaler)
-        Ny_outer_right = 26*element_scaler if wake_refined else (86*element_scaler)
-        Ny_outer_left  = 3*element_scaler if wake_refined else (30*element_scaler)
-        Nx_inner       = 4*element_scaler if wake_refined else (10*element_scaler)
-        circle_rad     = 1.5
+    def mesh(self, mesh_domain = False, xmin = -1.0, xmax = 1.0, ymin = -1.0, ymax = 1.0, mesh_format = 'msh', extruded = False, element_scaler = 3, wake_refinement = 0.0, circle_rad = 1.5, element_qty = None, wake_refinement_factors = None, poly_mesh_size = 0.006233):
+        element_qty_default = {
+            'Ny_outer': 8,
+            'Ny_inner_right': 12,
+            'Ny_inner_left': 12,
+            'Ny_outer_right': 26,
+            'Ny_outer_left': 3,
+            'Nx_inner': 4
+        }
+        if element_qty is None:
+            element_qty = element_qty_default
+        else:
+            element_qty = {**element_qty_default, **element_qty}
+
+        wake_refinement_factors_default = {
+            'Ny_outer': 2.75,
+            'Ny_inner_right': 1.0,
+            'Ny_inner_left': 0.0,
+            'Ny_outer_right': 2.3,
+            'Ny_outer_left': 9.0,
+            'Nx_inner': 1.5
+        }
+        if wake_refinement_factors is None:
+            wake_refinement_factors = wake_refinement_factors_default
+        else:
+            wake_refinement_factors = {**wake_refinement_factors_default, **wake_refinement_factors}
+            
+        get_wake_refinement_coeff = lambda g: 1.0 + wake_refinement * wake_refinement_factors[g]
+        get_element_qty = lambda g: int(element_scaler * element_qty[g] * get_wake_refinement_coeff(g))
+        
+        Ny_outer       = get_element_qty('Ny_outer')
+        Ny_inner_right = get_element_qty('Ny_inner_right')
+        Ny_inner_left  = get_element_qty('Ny_inner_left')
+        Ny_outer_right = get_element_qty('Ny_outer_right')
+        Ny_outer_left  = get_element_qty('Ny_outer_left')
+        Nx_inner       = get_element_qty('Nx_inner')
+        
+        #Ny_outer       = int(8*element_scaler if wake_refined else (30*element_scaler))
+        #Ny_inner       = int(12*element_scaler if wake_refined else (10*element_scaler))
+        #Ny_outer_right = int(26*element_scaler if wake_refined else (86*element_scaler))
+        #Ny_outer_left  = int(3*element_scaler if wake_refined else (30*element_scaler))
+        #Nx_inner       = int(4*element_scaler if wake_refined else (10*element_scaler))
+        
         # Convert curve to polygon
         with pygmsh.geo.Geometry() as geom:
             # bounding box
@@ -319,8 +381,9 @@ class Shape:
             p2 = geom.add_point((xmax, ymax, 0))
             p3 = geom.add_point((xmax, ymin, 0))
             p4 = geom.add_point((xmin, ymin, 0))
+            print(poly_mesh_size)
             poly = geom.add_polygon(self.curve_pts,
-                                    mesh_size=0.006233,
+                                    mesh_size=poly_mesh_size,
                                     make_surface=not mesh_domain)
 
             # Mesh domain if necessary
@@ -415,11 +478,11 @@ class Shape:
 
                 # Cross domain
                 # horizontal
-                geom.set_transfinite_curve(l2, Ny_inner//2 if wake_refined else Ny_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l21, Ny_inner//2 if wake_refined else Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l2, Ny_inner_left, 'Progression', 1.0)
+                geom.set_transfinite_curve(l21, Ny_inner_left, 'Progression', 1.0)
 
-                geom.set_transfinite_curve(l8, Ny_inner, 'Progression', 1.0)
-                geom.set_transfinite_curve(l23, Ny_inner, 'Progression', 1.0)
+                geom.set_transfinite_curve(l8, Ny_inner_right, 'Progression', 1.0)
+                geom.set_transfinite_curve(l23, Ny_inner_right, 'Progression', 1.0)
                 
                 # vertical
                 geom.set_transfinite_curve(l11, Nx_inner, 'Progression', 1.0)
@@ -459,76 +522,78 @@ class Shape:
                 if extruded:
                     # ********************  Extruding ********************
                     # Outer domain
+                    zpos, nlayers = extruded
+                    hts=1
                     extruded_1 = geom.extrude(
                         plane_surface_1,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_2 = geom.extrude(
                         plane_surface_2,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_3 = geom.extrude(
                         plane_surface_3,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_4 = geom.extrude(
                         plane_surface_4,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_5 = geom.extrude(
                         plane_surface_5,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_6 = geom.extrude(
                         plane_surface_6,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_7 = geom.extrude(
                         plane_surface_7,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     extruded_8 = geom.extrude(
                         plane_surface_8,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 
                     # Inner domain
                     extruded_9 = geom.extrude(
                         plane_surface_9,
-                        (0,0,1),
-                        num_layers=1,
-                        heights=[1],
+                        (0,0,float(zpos)),
+                        num_layers=nlayers,
+                        heights=[hts],
                         recombine=True,
                     )
 		
@@ -538,13 +603,13 @@ class Shape:
                         plane_surface_1, plane_surface_2, plane_surface_3,
                         plane_surface_4, plane_surface_5, plane_surface_6,
                         plane_surface_7, plane_surface_8, plane_surface_9
-                    ], label='back')
+                    ], label='periodic_0_l')
                 
                     geom.add_physical([
                         extruded_1[0], extruded_2[0], extruded_3[0],
                         extruded_4[0], extruded_5[0], extruded_6[0],
                         extruded_7[0], extruded_8[0], extruded_9[0],
-                    ], label='front')
+                    ], label='periodic_0_r')
 
                     geom.add_physical([
                         extruded_1[2][0], extruded_7[2][3], extruded_8[2][0], 
@@ -593,11 +658,16 @@ class Shape:
             except AssertionError:
                 print('\n'+'!!!!! Meshing failed !!!!!')
                 return False, 0
-
+        
         # Compute data from mesh
-        n_tri = len(mesh.cells_dict.get('triangle',[]))
-        n_quad = len(mesh.cells_dict.get('quad',[]))
-        n_cells = n_tri + n_quad
+        if extruded:
+            n_hex = len(mesh.cells_dict.get('hexahedron',[]))
+            n_wedge = len(mesh.cells_dict.get('wedge',[]))
+            n_cells = n_hex + n_wedge
+        else:
+            n_tri = len(mesh.cells_dict.get('triangle',[]))
+            n_quad = len(mesh.cells_dict.get('quad',[]))
+            n_cells = n_tri + n_quad
 
         return filename, n_cells
 
