@@ -31,7 +31,7 @@ class Shape:
                  n_sampling_pts=None,
                  radius        =None,
                  edgy          =None):
-        if (name           is None): name           = '/tmp/shape_' + str(next(self.default_name_counter))
+        if (name           is None): name           = 'shape_' + str(next(self.default_name_counter))
         if (control_pts    is None): control_pts    = np.array([])
         if (n_control_pts  is None): n_control_pts  = 0
         if (n_sampling_pts is None): n_sampling_pts = 0
@@ -331,7 +331,7 @@ class Shape:
 
     ### ************************************************
     ### Mesh shape
-    def mesh(self, mesh_domain = False, xmin = -1.0, xmax = 1.0, ymin = -1.0, ymax = 1.0, mesh_format = 'msh', extruded = False, element_scaler = 3, wake_refinement = 0.0, circle_rad = 1.5, element_qty = None, wake_refinement_factors = None, poly_mesh_size = 0.006233):
+    def mesh(self, mesh_domain = False, xmin = -1.0, xmax = 1.0, ymin = -1.0, ymax = 1.0, mesh_format = 'msh', extruded = False, element_scaler = 3, wake_refinement = 0.0, circle_rad = 1.5, element_qty = None, wake_refinement_factors = None, poly_mesh_size = 0.006233, output_dir='/tmp/'):
         element_qty_default = {
             'Ny_outer': 8,
             'Ny_inner_right': 12,
@@ -381,7 +381,7 @@ class Shape:
             p2 = geom.add_point((xmax, ymax, 0))
             p3 = geom.add_point((xmax, ymin, 0))
             p4 = geom.add_point((xmin, ymin, 0))
-            print(poly_mesh_size)
+            
             poly = geom.add_polygon(self.curve_pts,
                                     mesh_size=poly_mesh_size,
                                     make_surface=not mesh_domain)
@@ -653,7 +653,7 @@ class Shape:
             # Generate mesh and write in medit format
             try:
                 mesh = geom.generate_mesh()
-                filename = f'{self.name}_{self.index}.{mesh_format}'
+                filename = f'{output_dir}/{self.name}_{self.index}.{mesh_format}'
                 pygmsh.write(filename)
             except AssertionError:
                 print('\n'+'!!!!! Meshing failed !!!!!')
@@ -670,6 +670,155 @@ class Shape:
             n_cells = n_tri + n_quad
 
         return filename, n_cells
+
+    def OMesh(self, extruded=False, xmin = -10.0, xmax = 10.0, ymin = -10.0, ymax = 10.0, mesh_domain=True, obstacle_element_scale = 0.2, boundary_layer_parameters = None, wake_refinement=None, edge_method='polyline', output_dir='./'):
+        def add_polygon(geom, vertices_tags):
+            lines = []
+            for (line_start, line_end) in zip(vertices_tags[:-1], vertices_tags[1:]):
+                lines.append(geom.add_line(line_start, line_end))
+            lines.append(geom.add_line(vertices_tags[-1],vertices_tags[0]))
+            return lines
+        
+        obstacle_vertices_coords = self.curve_pts
+        obstacle_top_coord = np.max(obstacle_vertices_coords,axis=0)[1]
+        obstacle_bottom_coord = np.min(obstacle_vertices_coords,axis=0)[1]
+        centroid = np.mean(obstacle_vertices_coords,axis=0)
+
+        gmsh.initialize()
+        mod = gmsh.model
+        geom = mod.geo()
+
+        # curvatures, is_convex = curvature(self.curve_pts[:,:2])
+        obstacle_vertices = []
+        for pt in obstacle_vertices_coords:
+            pt_tag = geom.addPoint(*pt,obstacle_element_scale)
+            obstacle_vertices.append(pt_tag)
+        if edge_method == 'polygon':
+            obstacle_edge = add_polygon(geom, obstacle_vertices)
+        elif edge_method == 'polyline':
+            obstacle_edge = [geom.addPolyline(obstacle_vertices + [obstacle_vertices[0]])]
+        elif edge_method == 'spline':
+            obstacle_edge = [geom.add_spline(obstacle_vertices + [obstacle_vertices[0]])]
+        else:
+            raise(ValueError('Invalid edge_method {edge_method}; choose one of polygon polyline or spline'))
+        obstacle_loop = geom.add_curve_loop(obstacle_edge)
+
+        outer_vertices = []
+        outer_vertices.append(geom.add_point(xmax,ymax,0.0))
+        outer_vertices.append(geom.add_point(xmax,ymin,0.0))
+        outer_vertices.append(geom.add_point(xmin,ymin,0.0))
+        outer_vertices.append(geom.add_point(xmin,ymax,0.0))
+        outer_lines = add_polygon(geom, outer_vertices)
+        outer_loop = geom.add_curve_loop(outer_lines)
+        surf = geom.addPlaneSurface([outer_loop, obstacle_loop])
+
+        boundary_layer_default_parameters = {
+            "Thickness": np.mean(np.linalg.norm(self.curve_pts-centroid,axis=1)),
+            "Quads": 1,
+            "Size": 0.2,
+            "SizeFar": 1.0,
+            "IntersectMetrics": 1
+        }
+        boundary_layer_parameters = boundary_layer_parameters or {}
+        boundary_layer_parameters = {**boundary_layer_default_parameters, **boundary_layer_parameters}
+        blayer = mod.mesh.field.add("BoundaryLayer")
+        mod.mesh.field.setAsBoundaryLayer(blayer)
+        for param in boundary_layer_parameters:
+            mod.mesh.field.setNumber(blayer, param, boundary_layer_parameters[param])
+        mod.mesh.field.setNumbers(blayer, "CurvesList", [obstacle_loop])
+        
+        if wake_refinement is not None:
+            wake_refinement_default_parameters = {
+                "VIn": 0.2,
+                "VOut": 2.0,
+                "XMax": xmax,
+                "XMin": 0.0,
+                "YMax": obstacle_top_coord+1.25*boundary_layer_parameters["Thickness"],
+                "YMin": obstacle_bottom_coord-1.25*boundary_layer_parameters["Thickness"]
+            }
+            wake_refinement_parameters = {**wake_refinement_default_parameters, **wake_refinement}
+            wrbox = mod.mesh.field.add("Box")
+            for param in wake_refinement_parameters:
+                mod.mesh.field.setNumber(wrbox, param, wake_refinement_parameters[param])
+            #mod.mesh.field.setAsBackgroundMesh(wrbox)
+                
+            minaniso = mod.mesh.field.add("MinAniso")
+            mod.mesh.field.setNumbers(minaniso, "FieldsList", [blayer, wrbox])
+            mod.mesh.field.setAsBackgroundMesh(minaniso)
+
+        if extruded:
+            dz,nz = extruded
+            #(_, periodic_surf), (_, vol), (_, out_surf), (_,sym2_surf), (_,in_surf), (_,sym1_surf), (_,obstacle_surf)
+            extrusion_entities = geom.extrude([(2,surf)], 0, 0, dz, [nz], [], recombine=True)
+            periodic_surf = extrusion_entities[0][1]
+            vol = extrusion_entities[1][1]
+            out_surf = extrusion_entities[2][1]
+            sym2_surf = extrusion_entities[3][1]
+            in_surf = extrusion_entities[4][1]
+            sym1_surf = extrusion_entities[5][1]
+            obstacle_surfaces = [extrusion_entities[k][1] for k in range(6,len(extrusion_entities))]
+
+        geom.synchronize()
+
+        for edge in outer_lines[1:]:
+            mod.mesh.setTransfiniteCurve(edge, 20)
+
+        if extruded:
+            pg_periodic_0_l = mod.addPhysicalGroup(2,[periodic_surf])
+            mod.setPhysicalName(2,pg_periodic_0_l,"periodic_0_l")
+
+            pg_periodic_0_r = mod.addPhysicalGroup(2,[surf])
+            mod.setPhysicalName(2,pg_periodic_0_r,"periodic_0_r")
+
+            pg_obstacle = mod.addPhysicalGroup(2,obstacle_surfaces)
+            mod.setPhysicalName(2,pg_obstacle,"obstacle")
+
+            pg_in = mod.addPhysicalGroup(2,[in_surf])
+            mod.setPhysicalName(2,pg_in,"in")
+
+            pg_sym2 = mod.addPhysicalGroup(2,[sym2_surf])
+            mod.setPhysicalName(2,pg_sym2,"sym2")
+
+            pg_out = mod.addPhysicalGroup(2,[out_surf])
+            mod.setPhysicalName(2,pg_out,"out")
+
+            pg_sym1 = mod.addPhysicalGroup(2,[sym1_surf])
+            mod.setPhysicalName(2,pg_sym1,"sym1")
+
+            pg_fluid = mod.addPhysicalGroup(3,[vol])
+            mod.setPhysicalName(3,pg_fluid,"fluid")
+
+            generate_dim = 3
+        else:
+            pg_out = mod.addPhysicalGroup(1,[outer_lines[0]])
+            mod.setPhysicalName(1,pg_out,"out")
+            
+            pg_sym1 = mod.addPhysicalGroup(1,[outer_lines[1]])
+            mod.setPhysicalName(1,pg_sym1,"sym1")
+            
+            pg_in = mod.addPhysicalGroup(1,[outer_lines[2]])
+            mod.setPhysicalName(1,pg_in,"in")
+            
+            pg_sym2 = mod.addPhysicalGroup(1,[outer_lines[3]])
+            mod.setPhysicalName(1,pg_sym2,"sym2")
+            
+            pg_obstacle = mod.addPhysicalGroup(1,[obstacle_loop])
+            mod.setPhysicalName(1,pg_obstacle,"obstacle")
+            
+            pg_fluid = mod.addPhysicalGroup(2,[surf])
+            mod.setPhysicalName(2,pg_fluid,"fluid")
+
+            generate_dim = 2
+
+        mod.mesh.generate(2)
+        mod.mesh.optimize(method="Laplace2D", niter=200)
+        if generate_dim>2:
+            mod.mesh.generate(3)
+        filename = f'{output_dir}/{self.name}_{self.index}.msh'
+        gmsh.write(filename)
+
+        return filename,0
+        
 
     ### ************************************************
     ### Get shape bounding box
@@ -839,6 +988,35 @@ def remove_duplicate_pts(pts):
         pts = np.delete(pts, pt, 0)
 
     return pts
+
+### Compute curve curvature at every point
+def curvature(pts):
+
+    rot_matrix_ccw90 = np.array([[0,-1],[1,0]])
+    rot_matrix_cw90 = np.array([[0,1],[-1,0]])
+    
+    delta_sn = np.linalg.norm(pts[-1] - pts[0], ord=2)
+    delta_s = np.linalg.norm(pts[1:] - pts[:-1], axis=1, ord=2)
+    delta_s = np.concatenate([[delta_sn], delta_s, [delta_sn]],0)
+
+    padded_pts = np.pad(pts, ((1,1),(0,0)), 'wrap')
+    unit_tangents = padded_pts[2:] - padded_pts[:-2]
+    unit_tangents = unit_tangents/np.expand_dims(np.linalg.norm(unit_tangents, axis=1, ord=2),-1)
+    padded_unit_tangents = np.pad(unit_tangents, ((1,1),(0,0)), 'wrap')
+	
+	
+    dTds = (padded_unit_tangents[2:] - padded_unit_tangents[:-2])/np.expand_dims(delta_s[:-1] + delta_s[1:],1)
+    curvatures = np.linalg.norm(dTds,ord=2,axis=1)
+    unit_normals = dTds/np.expand_dims(curvatures,1)
+    
+    normal_tangent_angles = np.einsum('...i,...i->...', unit_tangents, unit_normals)
+    
+    test_rot_p90 = np.einsum('ij,...j->...i', rot_matrix_ccw90, unit_tangents)
+    test_rot_n90 = np.einsum('ij,...j->...i', rot_matrix_cw90, unit_tangents)
+    
+    is_convex = np.linalg.norm(test_rot_p90-unit_normals,axis=1,ord=2) < np.linalg.norm(test_rot_n90-unit_normals,axis=1,ord=2)
+
+    return curvatures, is_convex
 
 ### ************************************************
 ### Counter Clock-Wise sort
