@@ -712,43 +712,78 @@ class Shape:
         outer_loop = geom.add_curve_loop(outer_lines)
         surf = geom.addPlaneSurface([outer_loop, obstacle_loop])
 
-        boundary_layer_default_parameters = {
-            "Thickness": np.mean(np.linalg.norm(self.curve_pts-centroid,axis=1)),
-            "Quads": 1,
-            "Size": 0.2,
-            "SizeFar": 1.0,
-            "IntersectMetrics": 1
-        }
-        boundary_layer_parameters = boundary_layer_parameters or {}
-        boundary_layer_parameters = {**boundary_layer_default_parameters, **boundary_layer_parameters}
-        blayer = mod.mesh.field.add("BoundaryLayer")
-        mod.mesh.field.setAsBoundaryLayer(blayer)
-        for param in boundary_layer_parameters:
-            mod.mesh.field.setNumber(blayer, param, boundary_layer_parameters[param])
-        mod.mesh.field.setNumbers(blayer, "CurvesList", [obstacle_loop])
+        minaniso_fields = []
+        if boundary_layer_parameters is not None:
+            boundary_layer_default_parameters = {
+                "Thickness": np.mean(np.linalg.norm(self.curve_pts-centroid,axis=1)),
+                "Quads": 1,
+                "Size": 0.2,
+                "SizeFar": 1.0,
+                "IntersectMetrics": 1
+            }
+            boundary_layer_parameters = boundary_layer_parameters or {}
+            boundary_layer_parameters = {**boundary_layer_default_parameters, **boundary_layer_parameters}
+            blayer = mod.mesh.field.add("BoundaryLayer")
+            mod.mesh.field.setAsBoundaryLayer(blayer)
+            for param in boundary_layer_parameters:
+                mod.mesh.field.setNumber(blayer, param, boundary_layer_parameters[param])
+            mod.mesh.field.setNumbers(blayer, "CurvesList", [obstacle_loop])
+            minaniso_fields.append(blayer)
         
         if wake_refinement is not None:
+            try:
+                bl_offset = 1.25*boundary_layer_parameters["Thickness"]
+            except:
+                bl_offset = 0
             wake_refinement_default_parameters = {
                 "VIn": 0.2,
                 "VOut": 2.0,
                 "XMax": xmax,
                 "XMin": 0.0,
-                "YMax": obstacle_top_coord+1.25*boundary_layer_parameters["Thickness"],
-                "YMin": obstacle_bottom_coord-1.25*boundary_layer_parameters["Thickness"]
+                "YMax": obstacle_top_coord + bl_offset,
+                "YMin": obstacle_bottom_coord - bl_offset
             }
             wake_refinement_parameters = {**wake_refinement_default_parameters, **wake_refinement}
             wrbox = mod.mesh.field.add("Box")
             for param in wake_refinement_parameters:
                 mod.mesh.field.setNumber(wrbox, param, wake_refinement_parameters[param])
-            #mod.mesh.field.setAsBackgroundMesh(wrbox)
-                
+            minaniso_fields.append(wrbox)
+
+        if len(minaniso_fields)>0:
             minaniso = mod.mesh.field.add("MinAniso")
-            mod.mesh.field.setNumbers(minaniso, "FieldsList", [blayer, wrbox])
+            mod.mesh.field.setNumbers(minaniso, "FieldsList", minaniso_fields)
             mod.mesh.field.setAsBackgroundMesh(minaniso)
+            
+        geom.synchronize()
+
+        for edge in outer_lines[1:]:
+            mod.mesh.setTransfiniteCurve(edge, 20)
+
+        if not extruded:
+            pg_out = mod.addPhysicalGroup(1,[outer_lines[0]])
+            mod.setPhysicalName(1,pg_out,"out")
+            
+            pg_sym1 = mod.addPhysicalGroup(1,[outer_lines[1]])
+            mod.setPhysicalName(1,pg_sym1,"sym1")
+            
+            pg_in = mod.addPhysicalGroup(1,[outer_lines[2]])
+            mod.setPhysicalName(1,pg_in,"in")
+            
+            pg_sym2 = mod.addPhysicalGroup(1,[outer_lines[3]])
+            mod.setPhysicalName(1,pg_sym2,"sym2")
+            
+            pg_obstacle = mod.addPhysicalGroup(1,[obstacle_loop])
+            mod.setPhysicalName(1,pg_obstacle,"obstacle")
+            
+            pg_fluid = mod.addPhysicalGroup(2,[surf])
+            mod.setPhysicalName(2,pg_fluid,"fluid")
+
+        mod.mesh.generate(2)
+        mod.mesh.optimize("Laplace2D", niter=1000)
 
         if extruded:
             dz,nz = extruded
-            #(_, periodic_surf), (_, vol), (_, out_surf), (_,sym2_surf), (_,in_surf), (_,sym1_surf), (_,obstacle_surf)
+            
             extrusion_entities = geom.extrude([(2,surf)], 0, 0, dz, [nz], [], recombine=True)
             periodic_surf = extrusion_entities[0][1]
             vol = extrusion_entities[1][1]
@@ -758,12 +793,8 @@ class Shape:
             sym1_surf = extrusion_entities[5][1]
             obstacle_surfaces = [extrusion_entities[k][1] for k in range(6,len(extrusion_entities))]
 
-        geom.synchronize()
-
-        for edge in outer_lines[1:]:
-            mod.mesh.setTransfiniteCurve(edge, 20)
-
-        if extruded:
+            geom.synchronize()
+            
             pg_periodic_0_l = mod.addPhysicalGroup(2,[periodic_surf])
             mod.setPhysicalName(2,pg_periodic_0_l,"periodic_0_l")
 
@@ -788,32 +819,8 @@ class Shape:
             pg_fluid = mod.addPhysicalGroup(3,[vol])
             mod.setPhysicalName(3,pg_fluid,"fluid")
 
-            generate_dim = 3
-        else:
-            pg_out = mod.addPhysicalGroup(1,[outer_lines[0]])
-            mod.setPhysicalName(1,pg_out,"out")
-            
-            pg_sym1 = mod.addPhysicalGroup(1,[outer_lines[1]])
-            mod.setPhysicalName(1,pg_sym1,"sym1")
-            
-            pg_in = mod.addPhysicalGroup(1,[outer_lines[2]])
-            mod.setPhysicalName(1,pg_in,"in")
-            
-            pg_sym2 = mod.addPhysicalGroup(1,[outer_lines[3]])
-            mod.setPhysicalName(1,pg_sym2,"sym2")
-            
-            pg_obstacle = mod.addPhysicalGroup(1,[obstacle_loop])
-            mod.setPhysicalName(1,pg_obstacle,"obstacle")
-            
-            pg_fluid = mod.addPhysicalGroup(2,[surf])
-            mod.setPhysicalName(2,pg_fluid,"fluid")
-
-            generate_dim = 2
-
-        mod.mesh.generate(2)
-        mod.mesh.optimize(method="Laplace2D", niter=200)
-        if generate_dim>2:
             mod.mesh.generate(3)
+            
         filename = f'{output_dir}/{self.name}_{self.index}.msh'
         gmsh.write(filename)
 
