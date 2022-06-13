@@ -671,7 +671,7 @@ class Shape:
 
         return filename, n_cells
 
-    def OMesh(self, extruded=False, xmin = -10.0, xmax = 10.0, ymin = -10.0, ymax = 10.0, mesh_domain=True, obstacle_element_scale = 0.2, boundary_layer_parameters = None, wake_refinement=None, edge_method='polyline', output_dir='./'):
+    def OMesh(self, extruded=False, xmin = -10.0, xmax = 10.0, ymin = -10.0, ymax = 10.0, mesh_domain=True, obstacle_element_scale = 0.2, boundary_layer_parameters = None, wake_refinement=None, edge_method='polyline', laplace_smoothing_iter = 200, output_dir='./'):
         def add_polygon(geom, vertices_tags):
             lines = []
             for (line_start, line_end) in zip(vertices_tags[:-1], vertices_tags[1:]):
@@ -755,9 +755,7 @@ class Shape:
             mod.mesh.field.setAsBackgroundMesh(minaniso)
             
         geom.synchronize()
-
-        for edge in outer_lines[1:]:
-            mod.mesh.setTransfiniteCurve(edge, 20)
+        
 
         if not extruded:
             pg_out = mod.addPhysicalGroup(1,[outer_lines[0]])
@@ -779,7 +777,7 @@ class Shape:
             mod.setPhysicalName(2,pg_fluid,"fluid")
 
         mod.mesh.generate(2)
-        mod.mesh.optimize("Laplace2D", niter=1000)
+        mod.mesh.optimize("Laplace2D", niter=laplace_smoothing_iter)
 
         if extruded:
             dz,nz = extruded
