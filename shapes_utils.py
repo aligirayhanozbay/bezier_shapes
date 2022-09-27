@@ -822,6 +822,8 @@ class Shape:
         filename = f'{output_dir}/{self.name}_{self.index}.msh'
         gmsh.write(filename)
 
+        gmsh.finalize()
+
         return filename,0
         
 
